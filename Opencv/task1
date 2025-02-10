@@ -1,0 +1,90 @@
+#include <opencv2/opencv.hpp>
+#include <iostream>
+
+// 透视变换函数
+cv::Mat perspectiveTransform(const cv::Mat& src, const std::vector<cv::Point2f>& srcPoints) {
+    // 定义目标点
+    std::vector<cv::Point2f> dstPoints;
+    dstPoints.push_back(cv::Point2f(0, 0));
+    dstPoints.push_back(cv::Point2f(200, 0));
+    dstPoints.push_back(cv::Point2f(200, 300));
+    dstPoints.push_back(cv::Point2f(0, 300));
+
+    // 计算透视变换矩阵
+    cv::Mat transformMatrix = cv::getPerspectiveTransform(srcPoints, dstPoints);
+
+    // 进行透视变换
+    cv::Mat dst;
+    cv::warpPerspective(src, dst, transformMatrix, cv::Size(200, 300));
+
+    return dst;
+}
+
+int main() {
+    // 读取图片
+    cv::Mat image = cv::imread("ketchup_packet.jpg");
+    if (image.empty()) {
+        std::cout << "Could not open or find the image" << std::endl;
+        return -1;
+    }
+
+    // 转换到HSV颜色空间
+    cv::Mat hsv;
+    cv::cvtColor(image, hsv, cv::COLOR_BGR2HSV);
+
+    // 定义番茄酱颜色的HSV范围（根据实际情况调整）
+    cv::Scalar lower_red1(0, 120, 70);
+    cv::Scalar upper_red1(10, 255, 255);
+    cv::Scalar lower_red2(160, 120, 70);
+    cv::Scalar upper_red2(180, 255, 255);
+
+    // 创建掩码
+    cv::Mat mask1, mask2;
+    cv::inRange(hsv, lower_red1, upper_red1, mask1);
+    cv::inRange(hsv, lower_red2, upper_red2, mask2);
+    cv::Mat mask = mask1 | mask2;
+
+    // 形态学操作，去除噪声
+    cv::Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(5, 5));
+    cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
+    cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, kernel);
+
+    // 查找轮廓
+    std::vector<std::vector<cv::Point>> contours;
+    std::vector<cv::Vec4i> hierarchy;
+    cv::findContours(mask, contours, hierarchy, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
+
+    // 筛选轮廓
+    for (const auto& contour : contours) {
+        double area = cv::contourArea(contour);
+        if (area > 1000) { // 根据实际情况调整面积阈值
+            // 近似轮廓
+            std::vector<cv::Point> approx;
+            cv::approxPolyDP(contour, approx, 0.02 * cv::arcLength(contour, true), true);
+
+            if (approx.size() == 4) { // 假设番茄酱包是四边形
+                // 绘制轮廓
+                cv::drawContours(image, std::vector<std::vector<cv::Point>>{approx}, -1, cv::Scalar(0, 255, 0), 2);
+
+                // 转换为浮点型点
+                std::vector<cv::Point2f> srcPoints;
+                for (const auto& point : approx) {
+                    srcPoints.push_back(cv::Point2f(point.x, point.y));
+                }
+
+                // 进行透视变换
+                cv::Mat projectedImage = perspectiveTransform(image, srcPoints);
+
+                // 显示投影后的图像
+                cv::imshow("Projected Image", projectedImage);
+                cv::waitKey(0);
+            }
+        }
+    }
+
+    // 显示原始图像
+    cv::imshow("Original Image", image);
+    cv::waitKey(0);
+
+    return 0;
+}
