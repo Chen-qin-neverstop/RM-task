@@ -1,0 +1,25 @@
+#include <opencv2/opencv.hpp>
+
+using namespace cv;
+using namespace std;
+
+int main() {
+    string path = "/home/chen/图片/Recognition/enoz_noise.png";   
+    Mat src = imread(path); 
+    if (src.empty()) {
+        cerr << "Failed to load image!" << endl;
+        return -1;
+    }
+
+    Mat low_pass,dst;
+
+    // 双边滤波
+    bilateralFilter(src, low_pass, 13, 150, 150);
+
+    // 显示结果
+    imshow("Original", src);
+    imshow("Bilateral Filter (Low-Pass)", low_pass);
+
+    waitKey(0);
+    return 0;
+}
