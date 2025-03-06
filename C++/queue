@@ -1,0 +1,65 @@
+#include <queue>
+#include <mutex>
+#include <condition_variable>
+#include <chrono>
+
+template<typename T>
+class ThreadSafeQueue {
+private:
+    std::queue<T> queue_;
+    mutable std::mutex mutex_;
+    std::condition_variable cond_var_;
+
+public:
+    // 入队操作
+    void push(T value) {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            queue_.push(std::move(value));
+        }
+        cond_var_.notify_one();
+    }
+
+    // 出队操作，支持超时机制
+    bool pop(T& value, std::chrono::milliseconds timeout = std::chrono::milliseconds::max()) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (!cond_var_.wait_for(lock, timeout, [this] { return !queue_.empty(); })) {
+            return false; // 超时，队列为空
+        }
+        value = std::move(queue_.front());
+        queue_.pop();
+        return true;
+    }
+};
+//  检验
+#include <iostream>
+#include <thread>
+
+void producer(ThreadSafeQueue<int>& queue) {
+    for (int i = 0; i < 5; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        queue.push(i);
+        std::cout << "Produced: " << i << std::endl;
+    }
+}
+
+void consumer(ThreadSafeQueue<int>& queue) {
+    int value;
+    for (int i = 0; i < 5; ++i) {
+        if (queue.pop(value)) {
+            std::cout << "Consumed: " << value << std::endl;
+        }
+    }
+}
+
+int main() {
+    ThreadSafeQueue<int> queue;
+
+    std::thread producer_thread(producer, std::ref(queue));
+    std::thread consumer_thread(consumer, std::ref(queue));
+
+    producer_thread.join();
+    consumer_thread.join();
+
+    return 0;
+}
