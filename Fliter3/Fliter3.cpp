@@ -24,7 +24,7 @@ private:
 
 int main() {
     std::vector<double> measurements;
-    std::ifstream file("homework_data_1.txt");
+    std::ifstream file("homework_data_3.txt");
     std::string line;
 
     // 读取数据
@@ -51,9 +51,6 @@ int main() {
     // 输出拟合方程（卡尔曼滤波的最终状态）
     std::cout << "Fitted Curve Equation:\n";
     std::cout << "y(t) = " << kf.getEstimate() << " (smoothed by Kalman Filter)\n";
-
-    // 调用 Python 脚本绘图
-    system("python3 plot_kalman.py");
 
     return 0;
 }

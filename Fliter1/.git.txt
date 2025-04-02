@@ -1,0 +1,23 @@
+# This is a .git file for Git configuration
+
+# Specify the core repository settings
+[core]
+    repositoryformatversion = 0
+    filemode = false
+    bare = false
+    logallrefupdates = true
+
+# User information
+[user]
+    name = Your Name
+    email = your.email@example.com
+
+# Remote repository settings
+[remote "origin"]
+    url = https://github.com/yourusername/yourrepository.git
+    fetch = +refs/heads/*:refs/remotes/origin/*
+
+# Branch settings
+[branch "main"]
+    remote = origin
+    merge = refs/heads/main
