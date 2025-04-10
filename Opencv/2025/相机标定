@@ -1,0 +1,175 @@
+#include <opencv2/opencv.hpp>
+#include <vector>
+#include <iostream>
+#include <iomanip>
+#include <filesystem>
+
+using namespace cv;
+using namespace std;
+
+int main() {
+    // 设置棋盘格参数（12x8个内角点）
+    Size boardSize(12, 8); 
+    float squareSize = 20.0f; // 每个棋盘格20mm
+    
+    // 准备理论坐标（世界坐标系）
+    vector<Point3f> objectCorners;
+    for (int i = 0; i < boardSize.height; ++i) {
+        for (int j = 0; j < boardSize.width; ++j) {
+            objectCorners.push_back(Point3f(j * squareSize, i * squareSize, 0));
+        }
+    }
+    
+    vector<vector<Point3f>> objectPoints;
+    vector<vector<Point2f>> imagePoints;
+    
+    VideoCapture cap(0);
+    if (!cap.isOpened()) {
+        cerr << "ERROR: 无法打开摄像头" << endl;
+        return -1;
+    }
+    
+    // 设置采集参数
+    int targetSamples = 20;  // 推荐20个样本
+    int currentSamples = 0;
+    TermCriteria criteria(TermCriteria::EPS + TermCriteria::MAX_ITER, 30, 0.001);
+    
+    cout << "=== 相机标定程序 ===" << endl;
+    cout << "棋盘规格: " << boardSize.width << "x" << boardSize.height 
+         << " (每个格子 " << squareSize << "mm)" << endl;
+    cout << "需要采集 " << targetSamples << " 个有效样本" << endl;
+    cout << "按空格键保存当前帧，ESC键退出" << endl;
+    
+    // 创建存储图像的文件夹
+    string outputDir = "captured_images";
+    if (!filesystem::exists(outputDir)) {
+        filesystem::create_directory(outputDir);
+    }
+
+    while (currentSamples < targetSamples) {
+        Mat frame;
+        cap >> frame;
+        if (frame.empty()) {
+            cerr << "ERROR: 获取帧失败" << endl;
+            break;
+        }
+        
+        Mat gray;
+        cvtColor(frame, gray, COLOR_BGR2GRAY);
+        
+        vector<Point2f> corners;
+        bool found = findChessboardCorners(gray, boardSize, corners,
+                                         CALIB_CB_ADAPTIVE_THRESH + CALIB_CB_NORMALIZE_IMAGE);
+        
+        if (found) {
+            // 亚像素级角点检测
+            cornerSubPix(gray, corners, Size(11, 11), Size(-1, -1), criteria);
+            
+            // 可视化
+            drawChessboardCorners(frame, boardSize, corners, found);
+            string status = format("已采集: %d/%d | 按空格保存", currentSamples, targetSamples);
+            putText(frame, status, Point(20, 30), FONT_HERSHEY_SIMPLEX, 0.8, Scalar(0, 255, 0), 2);
+            
+            imshow("Camera Calibration", frame);
+            
+            int key = waitKey(1);
+            if (key == 32) { // 空格键
+                objectPoints.push_back(objectCorners);
+                imagePoints.push_back(corners);
+                currentSamples++;
+                
+                // 保存当前帧到文件夹
+                string filename = format("%s/sample_%02d.jpg", outputDir.c_str(), currentSamples);
+                imwrite(filename, frame);
+
+                // 显示采集进度
+                Mat display;
+                frame.copyTo(display);
+                string msg = format("样本 %d 已保存!", currentSamples);
+                putText(display, msg, Point(frame.cols/4, frame.rows/2), 
+                       FONT_HERSHEY_SIMPLEX, 1.5, Scalar(0, 255, 255), 3);
+                imshow("Camera Calibration", display);
+                waitKey(500); // 显示提示0.5秒
+            } else if (key == 27) { // ESC
+                break;
+            }
+        } else {
+            string msg = format("未检测到棋盘格 | 需要 %dx%d 内角点", 
+                               boardSize.width, boardSize.height);
+            putText(frame, msg, Point(20, 30), FONT_HERSHEY_SIMPLEX, 0.8, Scalar(0, 0, 255), 2);
+            imshow("Camera Calibration", frame);
+            if (waitKey(1) == 27) break;
+        }
+    }
+    
+// 标定计算前先获取一帧图像
+Mat frame;
+cap >> frame;
+if (frame.empty()) {
+    cerr << "ERROR: 无法获取帧用于确定图像尺寸" << endl;
+    return -1;
+}
+
+if (objectPoints.size() >= 5) {
+    Mat cameraMatrix, distCoeffs;
+    vector<Mat> rvecs, tvecs;
+    
+    cout << "\n开始计算相机参数..." << endl;
+    double rms = calibrateCamera(objectPoints, imagePoints, frame.size(),
+                               cameraMatrix, distCoeffs, rvecs, tvecs,
+                               CALIB_FIX_K4 + CALIB_FIX_K5);
+    
+    
+    // 输出结果
+    cout << fixed << setprecision(5);
+    cout << "\n=== 标定结果 ===" << endl;
+    cout << "重投影误差(RMS): " << rms << " (越小越好)" << endl;
+    cout << "\n相机内参矩阵:\n" << cameraMatrix << endl;
+    cout << "\n畸变系数(k1,k2,p1,p2,k3):\n" << distCoeffs.t() << endl;
+        
+        // 保存结果
+        FileStorage fs("camera_calibration.yml", FileStorage::WRITE);
+        fs << "board_width" << boardSize.width;
+        fs << "board_height" << boardSize.height;
+        fs << "square_size" << squareSize;
+        fs << "camera_matrix" << cameraMatrix;
+        fs << "distortion_coefficients" << distCoeffs;
+        fs << "reprojection_error" << rms;
+        fs.release();
+        cout << "\n参数已保存到 camera_calibration.yml" << endl;
+        
+        // 验证去畸变效果
+        Mat map1, map2;
+        Mat newCameraMatrix = getOptimalNewCameraMatrix(cameraMatrix, distCoeffs, 
+                                                      frame.size(), 1, frame.size(), 0);
+        initUndistortRectifyMap(cameraMatrix, distCoeffs, Mat(),
+                               newCameraMatrix, frame.size(),
+                               CV_16SC2, map1, map2);
+        
+        cout << "\n按任意键查看去畸变效果，ESC退出..." << endl;
+        while (true) {
+            Mat frame, undistorted;
+            cap >> frame;
+            if (frame.empty()) break;
+            
+            remap(frame, undistorted, map1, map2, INTER_LINEAR);
+            
+            // 并排显示
+            Mat comparison;
+            hconcat(frame, undistorted, comparison);
+            putText(comparison, "Original", Point(20, 30), 
+                   FONT_HERSHEY_SIMPLEX, 0.8, Scalar(0, 0, 255), 2);
+            putText(comparison, "Undistorted", Point(frame.cols + 20, 30), 
+                   FONT_HERSHEY_SIMPLEX, 0.8, Scalar(0, 255, 0), 2);
+            
+            imshow("Calibration Results", comparison);
+            if (waitKey(1) == 27) break;
+        }
+    } else {
+        cerr << "ERROR: 有效样本不足 (" << objectPoints.size() << ")，至少需要5个" << endl;
+    }
+    
+    cap.release();
+    destroyAllWindows();
+    return 0;
+}
