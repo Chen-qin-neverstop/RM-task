@@ -92,7 +92,7 @@ vector<pair<Point2f, Point2f>> matchArmorPairs(const vector<RotatedRect> &light_
     }
     return armor_pairs;
 }
-
+# 这里有问题，过于理想化，只有装甲板正对着相机才可以实现灯带角点的正确识别
 vector<Point2f> getArmorCorners(const pair<Point2f, Point2f> &pair) {
     Point2f p1 = pair.first;
     Point2f p2 = pair.second;
