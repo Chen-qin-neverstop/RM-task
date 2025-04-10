@@ -1,0 +1,67 @@
+#include<opencv2/imgcodecs.hpp>
+#include<opencv2/highgui.hpp>
+#include<opencv2/imgproc.hpp>
+#include<iostream>
+
+using namespace std;
+using namespace cv;
+
+void getContours(Mat imgDia, Mat img) {
+    vector<vector<Point>> contours;
+    vector<Vec4i> hierarchy;
+    findContours(imgDia, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE);
+
+    vector<vector<Point>> conPoly(contours.size());
+    vector<Rect> boundRect(contours.size());
+
+    for (int i = 0; i < contours.size(); i++) {
+        int area = contourArea(contours[i]);
+        if (area > 2000) {
+            float peri = arcLength(contours[i], true);
+            // 调整参数至0.02*peri以提高顶点检测精度
+            approxPolyDP(contours[i], conPoly[i], 0.012 * peri, true);
+            drawContours(img, conPoly, i, Scalar(255, 0, 0), 2);
+
+            // 绘制角点
+            int vertices = conPoly[i].size();
+            cout << "顶点数目：" << vertices << endl;
+
+            if (vertices == 6) { // 仅处理六边形轮廓
+                for (int j = 0; j < vertices; j++) {
+                    Point pt = conPoly[i][j];
+                    // 用红色实心圆标记角点
+                    circle(img, pt, 5, Scalar(0, 0, 255), FILLED);
+                    // 或用绿色十字标记
+                    // drawMarker(img, pt, Scalar(0, 255, 0), MARKER_CROSS, 10, 2);
+                }
+            }
+        }
+    }
+}
+
+int main() {
+    string path = "image.png"; // 输入图像路径
+    if (path.empty()) {
+        cout << "图像路径为空，请检查！" << endl;
+        return -1;
+    }
+    // 读取图像
+    Mat img = imread(path);
+    Mat imgCrop = img(Rect(300, 250, 400, 500)); // 裁剪灯带区域
+
+    // 预处理
+    Mat imgGray, imgBlur, imgCanny, imgDia;
+    cvtColor(imgCrop, imgGray, COLOR_BGR2GRAY);
+    GaussianBlur(imgGray, imgBlur, Size(3, 3), 3, 0);
+    Canny(imgBlur, imgCanny, 80, 85);
+
+    Mat kernel = getStructuringElement(MORPH_RECT, Size(3, 3));
+    dilate(imgCanny, imgDia, kernel);
+
+    getContours(imgDia, imgCrop); // 检测并绘制轮廓及角点
+
+    imshow("Result", imgCrop);
+    imwrite("dection.png", imgCrop); // 保存结果图像
+    waitKey(0);
+    return 0;
+}
