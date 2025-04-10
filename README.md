@@ -1,3 +1,3 @@
 RM Task that I hand in.
-c++底下是寒假作业
-Opencv也是寒假作业
+C++内是寒假作业
+Opencv中有寒假作业和周常作业
